@@ -16,6 +16,6 @@ def create_app():
     app.register_blueprint(bp_ads, url_prefix='/ads')
     app.register_blueprint(bp_cities, url_prefix='/cities')
     app.register_blueprint(bp_colors, url_prefix='/colors')
-    #app.register_blueprint(bp_images, url_prefix='/images')
+    app.register_blueprint(bp_images, url_prefix='/images')
     db.init_app(app)
     return app

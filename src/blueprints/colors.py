@@ -5,9 +5,11 @@ from flask import (
     session
 )
 from flask.views import MethodView
+from services.colors import ColorService
+from services.user import UserService
 from database import db
-bp = Blueprint('colors', __name__)
-
+from sqlalchemy.exc import IntegrityError
+import sqlite3
 
 class ColorsView(MethodView):
     def get(self):
@@ -15,44 +17,36 @@ class ColorsView(MethodView):
         Получить все цвета
         :return:
         """
-        with db.connection as con:
-            cur = con.execute("""
-                        SELECT *
-                        FROM color
-                        """)
-            return jsonify([dict(row) for row in cur.fetchall()]), 200
+        if session.get('user_id') is None:
+            return '', 401
+        user_service = UserService(db.connection)
+        if not user_service.is_user_a_seller(session.get('user_id')):
+            return 'получать цвета могут только продавцы', 405
+        color_service = ColorService(db.connection)
+        return jsonify(color_service.get_colors()), 200
 
     def post(self):
         """
         Добавить цвет
-        :return:
         """
         if session.get('user_id') is None:
             return '', 401
+        user_service = UserService(db.connection)
+        if not user_service.is_user_a_seller(session.get('user_id')):
+            return 'добавлять цвет могут только продавцы', 403
         request_json = request.json
         name = request_json.get('name')
         hex = request_json.get('hex')
-        with db.connection as con:
-            cur = con.execute("""
-                    SELECT *
-                    FROM color
-                    WHERE name = ?""",
-                    (name,))
-            color = cur.fetchone()
-            if color is not None:
-                return dict(color), 200
-            cur = con.execute("""
-                    INSERT INTO color (hex, name)
-                    VALUES (?, ?)""",
-                    (hex, name))
-            con.commit()
-            cur = con.execute("""
-                    SELECT *
-                    FROM color
-                    WHERE name = ?
-                    """,
-                    (name,))
-            return dict(cur.fetchone()), 302
+        color_service = ColorService(db.connection)
+        color = color_service.get_color_by_name(name)
+        if color is not None:
+            return jsonify(color.as_dict()), 201
+        try:
+            return jsonify(color_service.add_color(name, hex)), 201
+        except IntegrityError:
+            return '', 404
 
 
+bp = Blueprint('colors', __name__)
 bp.add_url_rule('', view_func=ColorsView.as_view('colors'))
+

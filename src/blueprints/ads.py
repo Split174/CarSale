@@ -5,7 +5,9 @@ from flask import (
     jsonify
 )
 from flask.views import MethodView
-from werkzeug.security import check_password_hash
+from services.ads import AdsService
+from services.user import UserService
+from services.car import CarService
 from database import db
 import sqlite3
 import time
@@ -20,96 +22,56 @@ class AdsView(MethodView):
         Вывести все объявления
         :return: Объявления
         """
-        with db.connection as con:
-            cur = con.execute("""
-            SELECT *
-            FROM ad
-            """)
-            return jsonify([dict(row) for row in cur.fetchall()]), 200
+        ads_service = AdsService(db.connection)
+        ads = ads_service.get_all_ads()
+        return jsonify(ads), 200
 
     def post(self):
         """Запостить объявление"""
         user_id = session.get('user_id')
         if user_id is None:
             return '', 401
+        user_service = UserService(db.connection)
+        if not user_service.is_user_a_seller(user_id):
+            return 'Пользователь не является продавцом', 403
         request_json = request.json
-        title = request_json.get('title')
-        make = request_json.get('car').get('make')
-        model = request_json.get('car').get('model')
-        mileage = request_json.get('car').get('mileage')
-        num_owners = request_json.get('car').get('num_owners')
-        reg_number = request_json.get('car').get('reg_number')
-        with db.connection as con:
-            cur = con.execute("""
-                        INSERT INTO car (make, model, mileage, num_owners, reg_number)
-                        VALUES (?, ?, ?, ?, ?)""",
-                        (make, model, mileage, num_owners, reg_number),
-                        )
-            con.commit()
-            car_id = cur.lastrowid
-            con.execute("""
-                INSERT INTO ad (title, seller_id, car_id, date)
-                VALUES (?, ?, ?, ?)""",
-                (title, user_id, car_id, time.time()),
-            )
-            con.commit()
-            ad_id = cur.lastrowid
-            ad = {
+        ad_title = request_json.get('title')
+        car = {
+            'make': request_json.get('car').get('make'),
+            'model': request_json.get('car').get('model'),
+            'mileage': request_json.get('car').get('mileage'),
+            'num_owners': request_json.get('car').get('num_owners'),
+            'reg_number': request_json.get('car').get('reg_number'),
+        }
+        car_service = CarService(db.connection)
+        new_car = car_service.add_car(car)
+        ad_service = AdsService(db.connection)
+        new_ad = ad_service.add_ad(ad_title, session.get('user_id'), new_car['id'])
+        return jsonify(ad_service.get_ad_by_id(new_ad['id'])), 200
 
-            }
-
-            cur = con.execute("""
-            SELECT *
-            FROM ad LEFT JOIN car ON ad.car_id = car.id
-            WHERE ad.seller_id = ?
-            """,
-            (user_id,))
-            return dict(cur.fetchone()), 201
 
 class AdView(MethodView):
-    """
-    Получить объявления по id
-    """
-    def get(self, user_id):
-        with db.connection as con:
-            cur = con.execute("""
-                    SELECT *
-                    FROM ad LEFT JOIN car ON ad.car_id = car.id
-                    WHERE ad.id = ?
-                    """,
-                    (user_id,))
-        return dict(cur.fetchone()), 200
+    def get(self, ad_id):
+        """
+        Получить объявление по id
+        """
+        ad_service = AdsService(db.connection)
+        return jsonify(ad_service.get_ad_by_id(ad_id)), 200
 
-class DeleteAdsView(MethodView):
-    """
-    Удалить объявление
-    """
     def delete(self, ad_id):
-        with db.connection as con:
-            print('qq')
-            user_id = session.get('user_id')
-            if user_id is None:
-                return '', 401
-            cur = con.execute("""
-                    SELECT *
-                    FROM ad
-                    WHERE ad.id = ?
-                    """,
-                    (ad_id,))
-            ad = cur.fetchone()
-            if ad is not None:
-                ad = dict(ad)
-            if ad['seller_id'] != user_id:
-                return '', 401
-            con.execute("""
-            DELETE FROM ad WHERE id = ?
-            """,
-            (ad_id,))
-            con.commit()
-            return '', 200
+        """
+            Удалить объявление
+        """
+        user_id = session.get('user_id')
+        if user_id is None:
+            return '', 401
+        ad_service = AdsService(db.connection)
+        if not ad_service.is_ad_belong_user(user_id, ad_id):
+            return '', 403
+        ad_service.delete_ad(ad_id)
+        return '', 200
 
 
 bp.add_url_rule('', view_func=AdsView.as_view('ads'))
-bp.add_url_rule('/<int:user_id>', view_func=AdView.as_view('ad_get'))
-bp.add_url_rule('/<int:ad_id>', view_func=DeleteAdsView.as_view('ad_del'))
+bp.add_url_rule('/<int:ad_id>', view_func=AdView.as_view('ad_del_add'))
 

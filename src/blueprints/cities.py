@@ -4,8 +4,8 @@ from flask import (
     request
 )
 from flask.views import MethodView
+from services.cities import CityService
 from database import db
-import sqlite3
 
 bp = Blueprint('cities', __name__)
 
@@ -18,32 +18,23 @@ class CitiesView(MethodView):
         """
         request_json = request.json
         name = request_json.get('name')
-        with db.connection as con:
-            try:
-                cur = con.execute("""
-                    SELECT *
-                    FROM city
-                    WHERE city.name = ?""",
-                (name,))
-                city = cur.fetchone()
-                if city is not None:
-                    return dict(city), 200
-
-                cur = con.execute("""
-                    INSERT INTO city (name)
-                    VALUES (?)""",
-                    (name,))
-                con.commit()
-                cur = con.execute("""
-                    SELECT *
-                    FROM city
-                    WHERE name = ?
-                    """,
-                    (name,))
-                return dict(cur.fetchone()), 302
-            except sqlite3.IntegrityError:
-                return '', 409
+        city_service = CityService(db.connection)
+        city = city_service.get_city_by_name(name)
+        if city is not None:
+            return jsonify(city.as_dict()), 201 # говорить о том что город добавлен даже если он есть?
+        return jsonify(city_service.add_city(name)), 201
 
 
-bp.add_url_rule('', view_func=CitiesView.as_view('cities'))
+class CityView(MethodView):
+    def get(self):
+        """
+        Получить список городов
+        :return:
+        """
+        city_service = CityService(db.connection)
+        return jsonify(city_service.get_cities()), 200
+
+
+bp.add_url_rule('', view_func=CitiesView.as_view('add_city'))
+bp.add_url_rule('', view_func=CityView.as_view('get_cities'))
 

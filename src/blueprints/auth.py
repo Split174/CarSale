@@ -5,7 +5,7 @@ from flask import (
 )
 from werkzeug.security import check_password_hash
 from database import db
-
+from services.user import UserService
 
 bp = Blueprint('auth', __name__)
 
@@ -21,25 +21,17 @@ def login():
     password = request_json.get('password')
 
     if not email or not password:
-        return '', 400
+        return '', 401
 
-    user = None
-    with db.connection as con:
-        cur = con.execute(
-            'SELECT email, password, id '
-            'FROM account '
-            'WHERE email = ?',
-            (email,),
-        )
-        user = cur.fetchone()
-
+    user_service = UserService(db.connection)
+    user = user_service.get_user_by_email(email)
     if user is None:
-        return '', 403
+        return 'Пользователя с таким email не существует', 401
 
-    if not check_password_hash(user['password'], password):
-        return 'Incorrect password', 403
+    if not check_password_hash(user.password, password):
+        return 'Не верный пароль', 401
 
-    session['user_id'] = user['id']
+    session['user_id'] = user.id
     return '', 200
 
 
@@ -47,7 +39,6 @@ def login():
 def logout():
     """
     Выход
-    :return:
     """
     session.pop('user_id', None)
     return '', 200

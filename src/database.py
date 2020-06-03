@@ -1,12 +1,13 @@
-import sqlite3
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-
-class SqliteDB:
+# переписал весь код в проекте на использование ORM
+class AlchemyORM:
     """
-    Класс для работы с sqlite db
+    Класс для работы с alchemy orm db
     """
     def __init__(self, app=None):
-        self._connection = None
+        self._session = None
         self._app = None
         if app is not None:
             self.init_app(app)
@@ -16,22 +17,19 @@ class SqliteDB:
         self._app.teardown_appcontext(self.close_db)
 
     @property
-    def connection(self):
+    def connection(self): # TODO в контексте ORM называть проперти connection возможно не верно
         self._connect()
-        return self._connection
+        return self._session
 
     def _connect(self):
-        connection_string = self._app.config['DB_CONNECTION']
-        self._connection = sqlite3.connect(
-            connection_string,
-            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
-        )
-        self._connection.row_factory = sqlite3.Row
+        engine = create_engine('sqlite:///db.sqlite')
+        Session = sessionmaker(bind=engine)
+        self._session = Session()
 
     def close_db(self, exception):
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        if self._session is not None:
+            self._session.close()
+            self._session = None
 
 
-db = SqliteDB()
+db = AlchemyORM()
